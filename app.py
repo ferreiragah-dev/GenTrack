@@ -125,8 +125,8 @@ def normalize_target_payload(payload: dict) -> tuple[str, str, int, int]:
     interval_seconds = int(payload.get("interval_seconds", DEFAULT_INTERVAL_SECONDS))
     timeout_seconds = int(payload.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
 
-    if interval_seconds < 15:
-        raise ValueError("interval_seconds deve ser >= 15 segundos.")
+    if interval_seconds < 1:
+        raise ValueError("interval_seconds deve ser >= 1 segundo.")
     if timeout_seconds < 1 or timeout_seconds > 60:
         raise ValueError("timeout_seconds deve estar entre 1 e 60 segundos.")
 
