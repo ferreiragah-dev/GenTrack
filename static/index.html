@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GenTrack - Monitor de Uptime</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>GenTrack</h1>
+      <p>Monitoramento de uptime, codigo HTTP e latencia</p>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Novo monitoramento</h2>
+        <form id="target-form">
+          <label>
+            Nome
+            <input type="text" id="name" required placeholder="Ex: Site principal" />
+          </label>
+          <label>
+            URL
+            <input type="url" id="url" required placeholder="https://seusite.com" />
+          </label>
+          <div class="row">
+            <label>
+              Intervalo (s)
+              <input type="number" id="interval_seconds" min="15" value="60" required />
+            </label>
+            <label>
+              Timeout (s)
+              <input type="number" id="timeout_seconds" min="1" max="60" value="8" required />
+            </label>
+          </div>
+          <button type="submit">Cadastrar</button>
+        </form>
+        <p id="form-message" class="message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Visao geral</h2>
+        <div class="kpis">
+          <article>
+            <span>Total</span>
+            <strong id="kpi-total">0</strong>
+          </article>
+          <article>
+            <span>Up</span>
+            <strong id="kpi-up">0</strong>
+          </article>
+          <article>
+            <span>Down</span>
+            <strong id="kpi-down">0</strong>
+          </article>
+          <article>
+            <span>Uptime medio 24h</span>
+            <strong id="kpi-uptime">--</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Alvos monitorados</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>URL</th>
+                <th>Status</th>
+                <th>HTTP</th>
+                <th>Latencia</th>
+                <th>Uptime 24h</th>
+                <th>Ultimo check</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody id="targets-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Historico do alvo selecionado</h2>
+        <p id="history-title">Clique em "Historico" em um alvo.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Horario</th>
+                <th>Status</th>
+                <th>HTTP</th>
+                <th>Latencia</th>
+                <th>Erro</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
