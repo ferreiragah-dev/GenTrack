@@ -5,13 +5,12 @@ from datetime import datetime, timedelta, timezone
 from urllib import error, request
 from urllib.parse import urlparse
 
+from flask import Flask, jsonify, request as flask_request, send_from_directory
 import psycopg
 from psycopg.rows import dict_row
-from flask import Flask, jsonify, request as flask_request, send_from_directory
 
 
-DEFAULT_DATABASE_URL = "postgres://gentrack:Pilotofab123!@72.60.158.28:6789/GenTrack-db?sslmode=disable"
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 MONITOR_POLL_SECONDS = int(os.getenv("MONITOR_POLL_SECONDS", "5"))
 DEFAULT_INTERVAL_SECONDS = int(os.getenv("DEFAULT_INTERVAL_SECONDS", "60"))
 DEFAULT_TIMEOUT_SECONDS = int(os.getenv("DEFAULT_TIMEOUT_SECONDS", "8"))
@@ -32,6 +31,8 @@ def to_iso(value):
 
 
 def get_db_connection():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL nao configurada.")
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
@@ -285,6 +286,18 @@ def root():
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return jsonify({"ok": True}), 200
+    finally:
+        conn.close()
+
+
 @app.route("/api/targets", methods=["GET"])
 def list_targets():
     conn = get_db_connection()
@@ -438,6 +451,8 @@ def dashboard():
 
 
 def create_app() -> Flask:
+    if not DATABASE_URL:
+        raise RuntimeError("Defina a variavel de ambiente DATABASE_URL para iniciar o GenTrack.")
     init_db()
     start_monitor_thread()
     return app
@@ -445,4 +460,5 @@ def create_app() -> Flask:
 
 if __name__ == "__main__":
     create_app()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
