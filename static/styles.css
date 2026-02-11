@@ -188,6 +188,10 @@ body {
   gap: 10px;
 }
 
+.reliability-kpis {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 .kpis article {
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -207,6 +211,10 @@ body {
   line-height: 1;
   color: var(--green);
   letter-spacing: 0.01em;
+}
+
+.reliability-kpis strong {
+  font-size: 26px;
 }
 
 .panel {
@@ -414,6 +422,10 @@ td a:hover {
     grid-template-columns: 1fr;
   }
 
+  .reliability-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .section-head {
     align-items: stretch;
     flex-direction: column;
@@ -434,6 +446,10 @@ td a:hover {
   }
 
   .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reliability-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

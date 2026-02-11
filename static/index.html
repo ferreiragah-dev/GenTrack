@@ -63,6 +63,32 @@
                 <strong id="kpi-uptime">--</strong>
               </article>
             </div>
+            <div class="kpis reliability-kpis">
+              <article>
+                <span>Ultima queda</span>
+                <strong id="kpi-last-failure">--</strong>
+              </article>
+              <article>
+                <span>MTTR</span>
+                <strong id="kpi-mttr">--</strong>
+              </article>
+              <article>
+                <span>MTBF</span>
+                <strong id="kpi-mtbf">--</strong>
+              </article>
+              <article>
+                <span>Quedas hoje</span>
+                <strong id="kpi-inc-day">--</strong>
+              </article>
+              <article>
+                <span>Quedas semana</span>
+                <strong id="kpi-inc-week">--</strong>
+              </article>
+              <article>
+                <span>Quedas mes</span>
+                <strong id="kpi-inc-month">--</strong>
+              </article>
+            </div>
           </section>
 
           <section class="chart-grid">
@@ -98,6 +124,24 @@
               </table>
             </div>
           </section>
+
+          <section class="panel">
+            <h3>Incidentes</h3>
+            <div class="table-wrap history-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Inicio</th>
+                    <th>Fim</th>
+                    <th>Duracao</th>
+                    <th>Motivo</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="incidents-body"></tbody>
+              </table>
+            </div>
+          </section>
         </main>
 
         <main class="layout view hidden" id="view-sites">
@@ -113,6 +157,14 @@
                   URL
                   <input type="url" id="url" required placeholder="https://seusite.com" />
                 </label>
+                <label>
+                  Conteudo esperado (HTML)
+                  <input type="text" id="expected_substring" placeholder="Ex: Login" />
+                </label>
+                <label>
+                  Chaves JSON esperadas (separadas por virgula)
+                  <input type="text" id="expected_json_keys" placeholder="data.status,user.id" />
+                </label>
                 <div class="row">
                   <label>
                     Intervalo (s)
@@ -123,6 +175,10 @@
                     <input type="number" id="timeout_seconds" min="1" max="60" value="8" required />
                   </label>
                 </div>
+                <label>
+                  Latencia maxima (ms)
+                  <input type="number" id="max_latency_ms" min="1" placeholder="Ex: 1500" />
+                </label>
                 <button type="submit">Cadastrar</button>
               </form>
               <p id="form-message" class="message"></p>

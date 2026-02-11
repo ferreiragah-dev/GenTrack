@@ -4,14 +4,24 @@ const els = {
   url: document.getElementById("url"),
   interval: document.getElementById("interval_seconds"),
   timeout: document.getElementById("timeout_seconds"),
+  expectedSubstring: document.getElementById("expected_substring"),
+  expectedJsonKeys: document.getElementById("expected_json_keys"),
+  maxLatencyMs: document.getElementById("max_latency_ms"),
   message: document.getElementById("form-message"),
   kpiTotal: document.getElementById("kpi-total"),
   kpiUp: document.getElementById("kpi-up"),
   kpiDown: document.getElementById("kpi-down"),
   kpiUptime: document.getElementById("kpi-uptime"),
+  kpiLastFailure: document.getElementById("kpi-last-failure"),
+  kpiMttr: document.getElementById("kpi-mttr"),
+  kpiMtbf: document.getElementById("kpi-mtbf"),
+  kpiIncDay: document.getElementById("kpi-inc-day"),
+  kpiIncWeek: document.getElementById("kpi-inc-week"),
+  kpiIncMonth: document.getElementById("kpi-inc-month"),
   targetsBody: document.getElementById("targets-body"),
   historyTitle: document.getElementById("history-title"),
   historyBody: document.getElementById("history-body"),
+  incidentsBody: document.getElementById("incidents-body"),
   uptimeChart: document.getElementById("uptime-chart"),
   latencyChart: document.getElementById("latency-chart"),
   trendChart: document.getElementById("trend-chart"),
@@ -30,6 +40,8 @@ const AUTO_REFRESH_SECONDS = 15;
 const state = {
   targets: [],
   history: [],
+  incidents: [],
+  reliability: null,
   selectedTargetId: null,
   selectedTargetName: "",
   refreshCountdown: AUTO_REFRESH_SECONDS,
@@ -45,6 +57,17 @@ const fmtDate = (iso) => {
 
 const fmtUptime = (value) => (value == null ? "--" : `${value.toFixed(2)}%`);
 const fmtLatency = (value) => (value == null ? "--" : `${value} ms`);
+const fmtDuration = (seconds) => {
+  if (seconds == null) return "--";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+};
 
 const statusLabel = (isUp) => {
   if (isUp === true) return { text: "UP", css: "up" };
@@ -57,7 +80,6 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Erro ${response.status}`);
   return payload;
@@ -130,7 +152,7 @@ function drawBarChart(canvas, labels, values, { suffix = "", maxValue = null, co
   });
 }
 
-function drawLineChart(canvas, labels, values) {
+function drawLineChart(canvas, labels, values, color = "#ff9f0a") {
   if (!labels.length) return drawEmptyChart(canvas, "Sem dados");
   const { ctx, width, height } = setupCanvas(canvas);
   const pad = { top: 16, right: 14, bottom: 36, left: 20 };
@@ -170,17 +192,9 @@ function drawLineChart(canvas, labels, values) {
 
   ctx.beginPath();
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-  ctx.strokeStyle = "#ff9f0a";
+  ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  points.forEach((p, i) => {
-    if (i % Math.ceil(points.length / 10) !== 0 && i !== points.length - 1) return;
-    ctx.fillStyle = "#8ea3c1";
-    ctx.font = "600 11px Rajdhani, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(p.label, p.x, height - 12);
-  });
 }
 
 function setActiveView(view) {
@@ -206,9 +220,7 @@ function getSelectedTarget() {
 function renderSiteSelect() {
   const previous = state.selectedTargetId;
   els.siteSelect.innerHTML = state.targets.length
-    ? state.targets
-        .map((t) => `<option value="${t.id}">${t.name}</option>`)
-        .join("")
+    ? state.targets.map((t) => `<option value="${t.id}">${t.name}</option>`).join("")
     : '<option value="">Sem sites cadastrados</option>';
 
   if (!state.targets.length) {
@@ -262,6 +274,12 @@ function renderSelectedKpis() {
     els.kpiUp.textContent = "--";
     els.kpiDown.textContent = "--";
     els.kpiUptime.textContent = "--";
+    els.kpiLastFailure.textContent = "--";
+    els.kpiMttr.textContent = "--";
+    els.kpiMtbf.textContent = "--";
+    els.kpiIncDay.textContent = "--";
+    els.kpiIncWeek.textContent = "--";
+    els.kpiIncMonth.textContent = "--";
     return;
   }
 
@@ -269,6 +287,15 @@ function renderSelectedKpis() {
   els.kpiUp.textContent = selected.last_status_code ?? "--";
   els.kpiDown.textContent = selected.last_latency_ms != null ? `${selected.last_latency_ms} ms` : "--";
   els.kpiUptime.textContent = fmtUptime(selected.uptime_24h);
+
+  const rel = state.reliability;
+  const lastFailure = rel?.last_incident?.started_at ? fmtDate(rel.last_incident.started_at) : "--";
+  els.kpiLastFailure.textContent = lastFailure;
+  els.kpiMttr.textContent = fmtDuration(rel?.mttr_seconds);
+  els.kpiMtbf.textContent = fmtDuration(rel?.mtbf_seconds);
+  els.kpiIncDay.textContent = String(rel?.incidents_day ?? "--");
+  els.kpiIncWeek.textContent = String(rel?.incidents_week ?? "--");
+  els.kpiIncMonth.textContent = String(rel?.incidents_month ?? "--");
 }
 
 function renderHistoryTable(history) {
@@ -276,7 +303,6 @@ function renderHistoryTable(history) {
     els.historyBody.innerHTML = `<tr><td colspan="5">Sem historico para esse site.</td></tr>`;
     return;
   }
-
   els.historyBody.innerHTML = history
     .map((item) => {
       const status = statusLabel(item.is_up);
@@ -286,7 +312,28 @@ function renderHistoryTable(history) {
           <td><span class="status ${status.css}">${status.text}</span></td>
           <td>${item.status_code ?? "--"}</td>
           <td>${fmtLatency(item.latency_ms)}</td>
-          <td>${item.error_message || "--"}</td>
+          <td>${item.error_message || item.reason_code || "--"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function renderIncidentsTable(incidents) {
+  if (!incidents.length) {
+    els.incidentsBody.innerHTML = `<tr><td colspan="5">Sem incidentes registrados.</td></tr>`;
+    return;
+  }
+  els.incidentsBody.innerHTML = incidents
+    .map((inc) => {
+      const status = inc.is_resolved ? "Resolvido" : "Aberto";
+      return `
+        <tr>
+          <td>${fmtDate(inc.started_at)}</td>
+          <td>${fmtDate(inc.ended_at)}</td>
+          <td>${fmtDuration(inc.duration_seconds)}</td>
+          <td>${inc.reason_message || inc.reason_code || "--"}</td>
+          <td>${status}</td>
         </tr>
       `;
     })
@@ -312,36 +359,50 @@ function renderSelectedCharts() {
     sorted.map((item) => (item.is_up ? 100 : 0)),
     { suffix: "%", maxValue: 100, color: "#73d07d" }
   );
-
   drawLineChart(
     els.latencyChart,
     labels,
-    sorted.map((item) => item.status_code ?? 0)
+    sorted.map((item) => item.status_code ?? 0),
+    "#78a9ff"
   );
-
   drawLineChart(
     els.trendChart,
     labels,
-    sorted.map((item) => item.latency_ms ?? 0)
+    sorted.map((item) => item.latency_ms ?? 0),
+    "#ff9f0a"
   );
 }
 
-async function loadSelectedHistory() {
+async function loadSelectedDetails() {
   if (!state.selectedTargetId) {
     state.history = [];
+    state.incidents = [];
+    state.reliability = null;
     els.historyTitle.textContent = "Selecione um site para carregar o historico.";
     els.trendTitle.textContent = "Tendencia de latencia";
     renderHistoryTable([]);
+    renderIncidentsTable([]);
     renderSelectedCharts();
+    renderSelectedKpis();
     return;
   }
 
-  const history = await api(`/api/targets/${state.selectedTargetId}/history?limit=80`);
+  const [history, reliability, incidents] = await Promise.all([
+    api(`/api/targets/${state.selectedTargetId}/history?limit=80`),
+    api(`/api/targets/${state.selectedTargetId}/reliability`),
+    api(`/api/targets/${state.selectedTargetId}/incidents?limit=80`),
+  ]);
+
   state.history = history || [];
+  state.reliability = reliability || null;
+  state.incidents = incidents || [];
+
   els.historyTitle.textContent = `Historico de ${state.selectedTargetName}`;
   els.trendTitle.textContent = `Tendencia de latencia - ${state.selectedTargetName}`;
   renderHistoryTable(state.history);
+  renderIncidentsTable(state.incidents);
   renderSelectedCharts();
+  renderSelectedKpis();
 }
 
 async function refreshDashboard() {
@@ -349,22 +410,28 @@ async function refreshDashboard() {
   state.targets = data.targets || [];
   renderTargetsTable(state.targets);
   renderSiteSelect();
-  renderSelectedKpis();
-  await loadSelectedHistory();
+  await loadSelectedDetails();
 }
 
 async function createTarget(event) {
   event.preventDefault();
   els.message.textContent = "";
+
+  const maxLatencyRaw = (els.maxLatencyMs.value || "").trim();
+  const payload = {
+    name: els.name.value,
+    url: els.url.value,
+    interval_seconds: Number(els.interval.value),
+    timeout_seconds: Number(els.timeout.value),
+    expected_substring: (els.expectedSubstring.value || "").trim() || null,
+    expected_json_keys: (els.expectedJsonKeys.value || "").trim() || null,
+    max_latency_ms: maxLatencyRaw ? Number(maxLatencyRaw) : null,
+  };
+
   try {
     await api("/api/targets", {
       method: "POST",
-      body: JSON.stringify({
-        name: els.name.value,
-        url: els.url.value,
-        interval_seconds: Number(els.interval.value),
-        timeout_seconds: Number(els.timeout.value),
-      }),
+      body: JSON.stringify(payload),
     });
     els.form.reset();
     els.interval.value = "60";
@@ -381,7 +448,6 @@ async function deleteTarget(targetId) {
   if (Number(state.selectedTargetId) === Number(targetId)) {
     state.selectedTargetId = null;
     state.selectedTargetName = "";
-    state.history = [];
   }
   await refreshDashboard();
 }
@@ -394,8 +460,10 @@ async function checkTarget(targetId) {
 async function handleTargetsClick(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
+
   const action = button.dataset.action;
   const targetId = Number(button.dataset.id);
+
   try {
     if (action === "delete") {
       await deleteTarget(targetId);
@@ -407,8 +475,7 @@ async function handleTargetsClick(event) {
       state.selectedTargetName = selected?.name || "";
       els.siteSelect.value = String(targetId);
       setActiveView("observability");
-      await loadSelectedHistory();
-      renderSelectedKpis();
+      await loadSelectedDetails();
     }
   } catch (err) {
     window.alert(err.message);
@@ -439,12 +506,11 @@ function startAutoRefresh() {
 els.form.addEventListener("submit", createTarget);
 els.targetsBody.addEventListener("click", handleTargetsClick);
 els.siteSelect.addEventListener("change", async () => {
-  const value = Number(els.siteSelect.value);
-  state.selectedTargetId = Number.isFinite(value) ? value : null;
+  const raw = (els.siteSelect.value || "").trim();
+  state.selectedTargetId = raw ? Number(raw) : null;
   const selected = getSelectedTarget();
   state.selectedTargetName = selected?.name || "";
-  renderSelectedKpis();
-  await loadSelectedHistory().catch((err) => {
+  await loadSelectedDetails().catch((err) => {
     els.message.textContent = err.message;
   });
 });
@@ -458,7 +524,6 @@ els.refreshNow.addEventListener("click", () => {
     els.message.textContent = err.message;
   });
 });
-
 window.addEventListener("resize", () => {
   window.clearTimeout(window.__gtResizeTimer);
   window.__gtResizeTimer = window.setTimeout(redrawCharts, 120);
