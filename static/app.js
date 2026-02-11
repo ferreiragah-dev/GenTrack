@@ -16,6 +16,8 @@ const els = {
   latencyChart: document.getElementById("latency-chart"),
   trendChart: document.getElementById("trend-chart"),
   trendTitle: document.getElementById("trend-title"),
+  refreshStatus: document.getElementById("refresh-status"),
+  refreshNow: document.getElementById("refresh-now"),
 };
 
 const state = {
@@ -23,7 +25,10 @@ const state = {
   history: [],
   selectedTargetId: null,
   selectedTargetName: "",
+  refreshCountdown: 15,
 };
+
+const AUTO_REFRESH_SECONDS = 15;
 
 const fmtDate = (iso) => {
   if (!iso) return "--";
@@ -287,6 +292,13 @@ async function refreshDashboard() {
   }
 }
 
+async function refreshAll() {
+  await refreshDashboard();
+  if (state.selectedTargetId != null) {
+    await loadHistory(state.selectedTargetId, state.selectedTargetName || "alvo");
+  }
+}
+
 async function createTarget(event) {
   event.preventDefault();
   els.message.textContent = "";
@@ -393,8 +405,33 @@ function redrawCharts() {
   renderTrendChart();
 }
 
+function updateRefreshStatus() {
+  els.refreshStatus.textContent = `Auto refresh em ${state.refreshCountdown}s`;
+}
+
+function startAutoRefresh() {
+  state.refreshCountdown = AUTO_REFRESH_SECONDS;
+  updateRefreshStatus();
+
+  window.setInterval(() => {
+    state.refreshCountdown -= 1;
+    if (state.refreshCountdown <= 0) {
+      state.refreshCountdown = AUTO_REFRESH_SECONDS;
+      refreshAll().catch(() => {});
+    }
+    updateRefreshStatus();
+  }, 1000);
+}
+
 els.form.addEventListener("submit", createTarget);
 els.targetsBody.addEventListener("click", handleTableClick);
+els.refreshNow.addEventListener("click", () => {
+  state.refreshCountdown = AUTO_REFRESH_SECONDS;
+  updateRefreshStatus();
+  refreshAll().catch((err) => {
+    els.message.textContent = err.message;
+  });
+});
 window.addEventListener("resize", () => {
   window.clearTimeout(window.__gtResizeTimer);
   window.__gtResizeTimer = window.setTimeout(redrawCharts, 120);
@@ -403,8 +440,8 @@ window.addEventListener("resize", () => {
 refreshDashboard()
   .then(() => {
     renderTrendChart();
+    startAutoRefresh();
   })
   .catch((err) => {
     els.message.textContent = err.message;
   });
-setInterval(() => refreshDashboard().catch(() => {}), 15000);

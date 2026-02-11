@@ -28,6 +28,8 @@
           <div class="top-actions">
             <span class="tag">Live</span>
             <span class="tag">Last 15 min</span>
+            <button class="tag tag-btn" id="refresh-now" type="button">Refresh now</button>
+            <span class="tag" id="refresh-status">Auto refresh em 15s</span>
           </div>
         </header>
 
@@ -101,7 +103,7 @@
             <article class="panel">
               <h3>Historico do alvo selecionado</h3>
               <p id="history-title">Clique em "Historico" em um alvo.</p>
-              <div class="table-wrap">
+              <div class="table-wrap history-scroll">
                 <table>
                   <thead>
                     <tr>
