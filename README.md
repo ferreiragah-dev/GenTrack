@@ -42,6 +42,8 @@ MONITOR_POLL_SECONDS=5
 DEFAULT_INTERVAL_SECONDS=60
 DEFAULT_TIMEOUT_SECONDS=8
 ```
+Alternativas suportadas para conexao: `POSTGRES_URL`, `POSTGRESQL_URL`, `DB_URL`
+ou variaveis separadas: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 4. Configure Healthcheck: `GET /health`
 5. Porta interna: `5000`
 

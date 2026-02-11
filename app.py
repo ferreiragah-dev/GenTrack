@@ -4,13 +4,13 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib import error, request
 from urllib.parse import urlparse
+from urllib.parse import quote_plus
 
 from flask import Flask, jsonify, request as flask_request, send_from_directory
 import psycopg
 from psycopg.rows import dict_row
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 MONITOR_POLL_SECONDS = int(os.getenv("MONITOR_POLL_SECONDS", "5"))
 DEFAULT_INTERVAL_SECONDS = int(os.getenv("DEFAULT_INTERVAL_SECONDS", "60"))
 DEFAULT_TIMEOUT_SECONDS = int(os.getenv("DEFAULT_TIMEOUT_SECONDS", "8"))
@@ -30,10 +30,41 @@ def to_iso(value):
     return value
 
 
+def resolve_database_url() -> str:
+    candidates = [
+        os.getenv("DATABASE_URL", "").strip(),
+        os.getenv("POSTGRES_URL", "").strip(),
+        os.getenv("POSTGRESQL_URL", "").strip(),
+        os.getenv("DB_URL", "").strip(),
+    ]
+    for value in candidates:
+        if value:
+            return value
+
+    host = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST")
+    port = os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or "5432"
+    user = os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
+    password = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD")
+    name = os.getenv("DB_NAME") or os.getenv("POSTGRES_DB") or os.getenv("DB_DATABASE")
+    sslmode = os.getenv("DB_SSLMODE") or os.getenv("PGSSLMODE") or "disable"
+
+    if host and user and password and name:
+        user_enc = quote_plus(user)
+        pass_enc = quote_plus(password)
+        name_enc = quote_plus(name)
+        return f"postgres://{user_enc}:{pass_enc}@{host}:{port}/{name_enc}?sslmode={sslmode}"
+
+    return ""
+
+
 def get_db_connection():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL nao configurada.")
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    database_url = resolve_database_url()
+    if not database_url:
+        raise RuntimeError(
+            "Banco nao configurado. Defina DATABASE_URL (ou POSTGRES_URL/DB_URL) "
+            "ou as variaveis DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME."
+        )
+    return psycopg.connect(database_url, row_factory=dict_row)
 
 
 def init_db() -> None:
@@ -451,8 +482,10 @@ def dashboard():
 
 
 def create_app() -> Flask:
-    if not DATABASE_URL:
-        raise RuntimeError("Defina a variavel de ambiente DATABASE_URL para iniciar o GenTrack.")
+    if not resolve_database_url():
+        raise RuntimeError(
+            "Defina DATABASE_URL (ou POSTGRES_URL/DB_URL) para iniciar o GenTrack."
+        )
     init_db()
     start_monitor_thread()
     return app
