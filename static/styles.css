@@ -207,6 +207,38 @@ button:hover {
   color: #f7fbff;
 }
 
+.chart-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.chart-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--panel-strong);
+}
+
+.chart-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #b3c2d8;
+  font-weight: 600;
+}
+
+.chart-card canvas {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(7, 11, 18, 0.7), rgba(5, 8, 14, 0.85));
+}
+
+.chart-card-wide {
+  margin-top: 2px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -286,6 +318,10 @@ td a:hover {
 
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chart-grid {
+    grid-template-columns: 1fr;
   }
 
   .row {
