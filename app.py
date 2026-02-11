@@ -33,8 +33,10 @@ def to_iso(value):
 def resolve_database_url() -> str:
     candidates = [
         os.getenv("DATABASE_URL", "").strip(),
+        os.getenv("DATABASE_URI", "").strip(),
         os.getenv("POSTGRES_URL", "").strip(),
         os.getenv("POSTGRESQL_URL", "").strip(),
+        os.getenv("POSTGRES_CONNECTION_STRING", "").strip(),
         os.getenv("DB_URL", "").strip(),
     ]
     for value in candidates:
