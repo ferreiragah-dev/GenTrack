@@ -7,118 +7,140 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>GenTrack</h1>
-      <p>Monitoramento de uptime, codigo HTTP e latencia</p>
-    </header>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-mark">GT</div>
+        <nav class="side-nav">
+          <button class="side-item active" type="button">Dashboard</button>
+          <button class="side-item" type="button">Sites</button>
+          <button class="side-item" type="button">Alertas</button>
+          <button class="side-item" type="button">Erros</button>
+          <button class="side-item" type="button">Config</button>
+        </nav>
+      </aside>
 
-    <main class="layout">
-      <section class="panel">
-        <h2>Novo monitoramento</h2>
-        <form id="target-form">
-          <label>
-            Nome
-            <input type="text" id="name" required placeholder="Ex: Site principal" />
-          </label>
-          <label>
-            URL
-            <input type="url" id="url" required placeholder="https://seusite.com" />
-          </label>
-          <div class="row">
-            <label>
-              Intervalo (s)
-              <input type="number" id="interval_seconds" min="1" value="60" required />
-            </label>
-            <label>
-              Timeout (s)
-              <input type="number" id="timeout_seconds" min="1" max="60" value="8" required />
-            </label>
+      <div class="main-shell">
+        <header class="topbar">
+          <div class="headline">
+            <p class="crumb">General / GenTrack Uptime</p>
+            <h1>Observabilidade Web</h1>
           </div>
-          <button type="submit">Cadastrar</button>
-        </form>
-        <p id="form-message" class="message"></p>
-      </section>
+          <div class="top-actions">
+            <span class="tag">Live</span>
+            <span class="tag">Last 15 min</span>
+          </div>
+        </header>
 
-      <section class="panel">
-        <h2>Visao geral</h2>
-        <div class="kpis">
-          <article>
-            <span>Total</span>
-            <strong id="kpi-total">0</strong>
-          </article>
-          <article>
-            <span>Up</span>
-            <strong id="kpi-up">0</strong>
-          </article>
-          <article>
-            <span>Down</span>
-            <strong id="kpi-down">0</strong>
-          </article>
-          <article>
-            <span>Uptime medio 24h</span>
-            <strong id="kpi-uptime">--</strong>
-          </article>
-        </div>
-      </section>
+        <main class="layout">
+          <section class="section">
+            <div class="section-title">
+              <h2>Performance</h2>
+            </div>
+            <div class="kpis">
+              <article>
+                <span>Total</span>
+                <strong id="kpi-total">0</strong>
+              </article>
+              <article>
+                <span>Up</span>
+                <strong id="kpi-up">0</strong>
+              </article>
+              <article>
+                <span>Down</span>
+                <strong id="kpi-down">0</strong>
+              </article>
+              <article>
+                <span>Uptime medio 24h</span>
+                <strong id="kpi-uptime">--</strong>
+              </article>
+            </div>
+          </section>
 
-      <section class="panel">
-        <h2>Graficos</h2>
-        <div class="chart-grid">
-          <article class="chart-card">
-            <h3>Uptime 24h por alvo</h3>
-            <canvas id="uptime-chart" height="220"></canvas>
-          </article>
-          <article class="chart-card">
-            <h3>Latencia atual por alvo</h3>
-            <canvas id="latency-chart" height="220"></canvas>
-          </article>
-        </div>
-        <article class="chart-card chart-card-wide">
-          <h3 id="trend-title">Tendencia de latencia (selecione um alvo)</h3>
-          <canvas id="trend-chart" height="250"></canvas>
-        </article>
-      </section>
+          <section class="chart-grid">
+            <article class="panel chart-card">
+              <h3>Uptime 24h por alvo</h3>
+              <canvas id="uptime-chart" height="240"></canvas>
+            </article>
+            <article class="panel chart-card">
+              <h3>Latencia atual por alvo</h3>
+              <canvas id="latency-chart" height="240"></canvas>
+            </article>
+            <article class="panel chart-card">
+              <h3 id="trend-title">Tendencia de latencia (selecione um alvo)</h3>
+              <canvas id="trend-chart" height="240"></canvas>
+            </article>
+          </section>
 
-      <section class="panel">
-        <h2>Alvos monitorados</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>URL</th>
-                <th>Status</th>
-                <th>HTTP</th>
-                <th>Latencia</th>
-                <th>Uptime 24h</th>
-                <th>Ultimo check</th>
-                <th>Acoes</th>
-              </tr>
-            </thead>
-            <tbody id="targets-body"></tbody>
-          </table>
-        </div>
-      </section>
+          <section class="split-grid">
+            <article class="panel">
+              <h3>Novo monitoramento</h3>
+              <form id="target-form">
+                <label>
+                  Nome
+                  <input type="text" id="name" required placeholder="Ex: Site principal" />
+                </label>
+                <label>
+                  URL
+                  <input type="url" id="url" required placeholder="https://seusite.com" />
+                </label>
+                <div class="row">
+                  <label>
+                    Intervalo (s)
+                    <input type="number" id="interval_seconds" min="1" value="60" required />
+                  </label>
+                  <label>
+                    Timeout (s)
+                    <input type="number" id="timeout_seconds" min="1" max="60" value="8" required />
+                  </label>
+                </div>
+                <button type="submit">Cadastrar</button>
+              </form>
+              <p id="form-message" class="message"></p>
+            </article>
 
-      <section class="panel">
-        <h2>Historico do alvo selecionado</h2>
-        <p id="history-title">Clique em "Historico" em um alvo.</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Horario</th>
-                <th>Status</th>
-                <th>HTTP</th>
-                <th>Latencia</th>
-                <th>Erro</th>
-              </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+            <article class="panel">
+              <h3>Historico do alvo selecionado</h3>
+              <p id="history-title">Clique em "Historico" em um alvo.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Horario</th>
+                      <th>Status</th>
+                      <th>HTTP</th>
+                      <th>Latencia</th>
+                      <th>Erro</th>
+                    </tr>
+                  </thead>
+                  <tbody id="history-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <section class="panel">
+            <h3>Alvos monitorados</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>URL</th>
+                    <th>Status</th>
+                    <th>HTTP</th>
+                    <th>Latencia</th>
+                    <th>Uptime 24h</th>
+                    <th>Ultimo check</th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody id="targets-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
 
     <script src="/static/app.js"></script>
   </body>
