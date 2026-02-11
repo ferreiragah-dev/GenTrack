@@ -11,48 +11,55 @@
       <aside class="sidebar">
         <div class="brand-mark">GT</div>
         <nav class="side-nav">
-          <button class="side-item active" type="button">Dashboard</button>
-          <button class="side-item" type="button">Sites</button>
-          <button class="side-item" type="button">Alertas</button>
-          <button class="side-item" type="button">Erros</button>
-          <button class="side-item" type="button">Config</button>
+          <button class="side-item active" data-view="observability" type="button">Dashboard</button>
+          <button class="side-item" data-view="sites" type="button">Sites</button>
+          <button class="side-item" data-view="alerts" type="button">Alertas</button>
+          <button class="side-item" data-view="errors" type="button">Erros</button>
+          <button class="side-item" data-view="config" type="button">Config</button>
         </nav>
       </aside>
 
       <div class="main-shell">
         <header class="topbar">
           <div class="headline">
-            <p class="crumb">General / GenTrack Uptime</p>
-            <h1>Observabilidade Web</h1>
+            <p class="crumb" id="page-crumb">General / GenTrack Uptime</p>
+            <h1 id="page-title">Observabilidade Web</h1>
           </div>
           <div class="top-actions">
             <span class="tag">Live</span>
-            <span class="tag">Last 15 min</span>
             <button class="tag tag-btn" id="refresh-now" type="button">Refresh now</button>
             <span class="tag" id="refresh-status">Auto refresh em 15s</span>
           </div>
         </header>
 
-        <main class="layout">
+        <main class="layout view" id="view-observability">
           <section class="section">
-            <div class="section-title">
-              <h2>Performance</h2>
+            <div class="section-head">
+              <div class="section-title">
+                <h2>Performance</h2>
+              </div>
+              <div class="site-select-wrap">
+                <label for="site-select">Site selecionado</label>
+                <select id="site-select">
+                  <option value="">Selecione...</option>
+                </select>
+              </div>
             </div>
             <div class="kpis">
               <article>
-                <span>Total</span>
-                <strong id="kpi-total">0</strong>
+                <span>Status atual</span>
+                <strong id="kpi-total">--</strong>
               </article>
               <article>
-                <span>Up</span>
-                <strong id="kpi-up">0</strong>
+                <span>HTTP</span>
+                <strong id="kpi-up">--</strong>
               </article>
               <article>
-                <span>Down</span>
-                <strong id="kpi-down">0</strong>
+                <span>Latencia</span>
+                <strong id="kpi-down">--</strong>
               </article>
               <article>
-                <span>Uptime medio 24h</span>
+                <span>Uptime 24h</span>
                 <strong id="kpi-uptime">--</strong>
               </article>
             </div>
@@ -60,19 +67,40 @@
 
           <section class="chart-grid">
             <article class="panel chart-card">
-              <h3>Uptime 24h por alvo</h3>
+              <h3>Uptime por check (ultimos 30)</h3>
               <canvas id="uptime-chart" height="240"></canvas>
             </article>
             <article class="panel chart-card">
-              <h3>Latencia atual por alvo</h3>
+              <h3>HTTP status por check</h3>
               <canvas id="latency-chart" height="240"></canvas>
             </article>
             <article class="panel chart-card">
-              <h3 id="trend-title">Tendencia de latencia (selecione um alvo)</h3>
+              <h3 id="trend-title">Tendencia de latencia</h3>
               <canvas id="trend-chart" height="240"></canvas>
             </article>
           </section>
 
+          <section class="panel">
+            <h3>Historico do site selecionado</h3>
+            <p id="history-title">Selecione um site para carregar o historico.</p>
+            <div class="table-wrap history-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Horario</th>
+                    <th>Status</th>
+                    <th>HTTP</th>
+                    <th>Latencia</th>
+                    <th>Erro</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+
+        <main class="layout view hidden" id="view-sites">
           <section class="split-grid">
             <article class="panel">
               <h3>Novo monitoramento</h3>
@@ -101,45 +129,36 @@
             </article>
 
             <article class="panel">
-              <h3>Historico do alvo selecionado</h3>
-              <p id="history-title">Clique em "Historico" em um alvo.</p>
-              <div class="table-wrap history-scroll">
+              <h3>Sites monitorados</h3>
+              <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Horario</th>
+                      <th>Nome</th>
+                      <th>URL</th>
                       <th>Status</th>
                       <th>HTTP</th>
                       <th>Latencia</th>
-                      <th>Erro</th>
+                      <th>Uptime 24h</th>
+                      <th>Ultimo check</th>
+                      <th>Acoes</th>
                     </tr>
                   </thead>
-                  <tbody id="history-body"></tbody>
+                  <tbody id="targets-body"></tbody>
                 </table>
               </div>
             </article>
           </section>
+        </main>
 
-          <section class="panel">
-            <h3>Alvos monitorados</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>URL</th>
-                    <th>Status</th>
-                    <th>HTTP</th>
-                    <th>Latencia</th>
-                    <th>Uptime 24h</th>
-                    <th>Ultimo check</th>
-                    <th>Acoes</th>
-                  </tr>
-                </thead>
-                <tbody id="targets-body"></tbody>
-              </table>
-            </div>
-          </section>
+        <main class="layout view hidden" id="view-alerts">
+          <section class="panel"><h3>Alertas</h3><p>Em breve.</p></section>
+        </main>
+        <main class="layout view hidden" id="view-errors">
+          <section class="panel"><h3>Erros</h3><p>Em breve.</p></section>
+        </main>
+        <main class="layout view hidden" id="view-config">
+          <section class="panel"><h3>Config</h3><p>Em breve.</p></section>
         </main>
       </div>
     </div>

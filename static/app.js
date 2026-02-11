@@ -18,17 +18,23 @@ const els = {
   trendTitle: document.getElementById("trend-title"),
   refreshStatus: document.getElementById("refresh-status"),
   refreshNow: document.getElementById("refresh-now"),
+  siteSelect: document.getElementById("site-select"),
+  sideButtons: document.querySelectorAll(".side-item[data-view]"),
+  views: document.querySelectorAll(".view"),
+  pageTitle: document.getElementById("page-title"),
+  pageCrumb: document.getElementById("page-crumb"),
 };
+
+const AUTO_REFRESH_SECONDS = 15;
 
 const state = {
   targets: [],
   history: [],
   selectedTargetId: null,
   selectedTargetName: "",
-  refreshCountdown: 15,
+  refreshCountdown: AUTO_REFRESH_SECONDS,
+  activeView: "observability",
 };
-
-const AUTO_REFRESH_SECONDS = 15;
 
 const fmtDate = (iso) => {
   if (!iso) return "--";
@@ -53,9 +59,7 @@ async function api(path, options = {}) {
   });
 
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || `Erro ${response.status}`);
-  }
+  if (!response.ok) throw new Error(payload.error || `Erro ${response.status}`);
   return payload;
 }
 
@@ -81,25 +85,19 @@ function drawEmptyChart(canvas, text) {
 }
 
 function drawBarChart(canvas, labels, values, { suffix = "", maxValue = null, color = "#ff9f0a" } = {}) {
-  if (!labels.length) {
-    drawEmptyChart(canvas, "Sem dados para exibir");
-    return;
-  }
-
+  if (!labels.length) return drawEmptyChart(canvas, "Sem dados");
   const { ctx, width, height } = setupCanvas(canvas);
   const pad = { top: 14, right: 12, bottom: 54, left: 12 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
   const max = Math.max(maxValue ?? 0, ...values, 1);
-  const barW = innerW / labels.length * 0.62;
-  const gap = innerW / labels.length * 0.38;
+  const barW = (innerW / labels.length) * 0.62;
+  const gap = (innerW / labels.length) * 0.38;
 
   ctx.clearRect(0, 0, width, height);
-
   for (let i = 0; i <= 4; i += 1) {
     const y = pad.top + (innerH / 4) * i;
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(pad.left, y);
     ctx.lineTo(width - pad.right, y);
@@ -111,11 +109,9 @@ function drawBarChart(canvas, labels, values, { suffix = "", maxValue = null, co
     const x = pad.left + i * (barW + gap) + gap / 2;
     const h = (value / max) * innerH;
     const y = pad.top + innerH - h;
-
     const gradient = ctx.createLinearGradient(0, y, 0, y + h);
     gradient.addColorStop(0, color);
     gradient.addColorStop(1, "rgba(255, 140, 0, 0.35)");
-
     ctx.fillStyle = gradient;
     if (typeof ctx.roundRect === "function") {
       ctx.beginPath();
@@ -124,12 +120,10 @@ function drawBarChart(canvas, labels, values, { suffix = "", maxValue = null, co
     } else {
       ctx.fillRect(x, y, barW, h);
     }
-
     ctx.fillStyle = "#d9e4f2";
     ctx.font = "600 12px Rajdhani, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(`${Math.round(value)}${suffix}`, x + barW / 2, y - 6);
-
     ctx.fillStyle = "#93a6c1";
     const short = label.length > 14 ? `${label.slice(0, 11)}...` : label;
     ctx.fillText(short, x + barW / 2, height - 18);
@@ -137,11 +131,7 @@ function drawBarChart(canvas, labels, values, { suffix = "", maxValue = null, co
 }
 
 function drawLineChart(canvas, labels, values) {
-  if (!labels.length) {
-    drawEmptyChart(canvas, "Selecione um alvo para ver tendencia");
-    return;
-  }
-
+  if (!labels.length) return drawEmptyChart(canvas, "Sem dados");
   const { ctx, width, height } = setupCanvas(canvas);
   const pad = { top: 16, right: 14, bottom: 36, left: 20 };
   const innerW = width - pad.left - pad.right;
@@ -151,7 +141,6 @@ function drawLineChart(canvas, labels, values) {
   const range = Math.max(1, max - min);
 
   ctx.clearRect(0, 0, width, height);
-
   for (let i = 0; i <= 4; i += 1) {
     const y = pad.top + (innerH / 4) * i;
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
@@ -164,7 +153,7 @@ function drawLineChart(canvas, labels, values) {
   const points = values.map((value, i) => {
     const x = pad.left + (i / Math.max(1, values.length - 1)) * innerW;
     const y = pad.top + innerH - ((value - min) / range) * innerH;
-    return { x, y, value, label: labels[i] };
+    return { x, y, label: labels[i] };
   });
 
   const fill = ctx.createLinearGradient(0, pad.top, 0, pad.top + innerH);
@@ -172,10 +161,7 @@ function drawLineChart(canvas, labels, values) {
   fill.addColorStop(1, "rgba(255, 159, 10, 0.02)");
 
   ctx.beginPath();
-  points.forEach((p, i) => {
-    if (i === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
   ctx.lineTo(points[points.length - 1].x, pad.top + innerH);
   ctx.lineTo(points[0].x, pad.top + innerH);
   ctx.closePath();
@@ -183,10 +169,7 @@ function drawLineChart(canvas, labels, values) {
   ctx.fill();
 
   ctx.beginPath();
-  points.forEach((p, i) => {
-    if (i === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
   ctx.strokeStyle = "#ff9f0a";
   ctx.lineWidth = 2;
   ctx.stroke();
@@ -198,46 +181,50 @@ function drawLineChart(canvas, labels, values) {
     ctx.textAlign = "center";
     ctx.fillText(p.label, p.x, height - 12);
   });
-
-  points.forEach((p) => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffc266";
-    ctx.fill();
-  });
 }
 
-function renderTargetCharts() {
-  const sorted = [...state.targets].sort((a, b) => (b.uptime_24h ?? -1) - (a.uptime_24h ?? -1)).slice(0, 8);
-
-  drawBarChart(
-    els.uptimeChart,
-    sorted.map((t) => t.name),
-    sorted.map((t) => t.uptime_24h ?? 0),
-    { suffix: "%", maxValue: 100, color: "#ff9f0a" }
-  );
-
-  const latencySorted = [...state.targets]
-    .filter((t) => t.last_latency_ms != null)
-    .sort((a, b) => b.last_latency_ms - a.last_latency_ms)
-    .slice(0, 8);
-
-  drawBarChart(
-    els.latencyChart,
-    latencySorted.map((t) => t.name),
-    latencySorted.map((t) => t.last_latency_ms ?? 0),
-    { suffix: "ms", color: "#58a6ff" }
-  );
+function setActiveView(view) {
+  const labels = {
+    observability: ["Observabilidade Web", "General / GenTrack Uptime"],
+    sites: ["Sites Monitorados", "General / Sites"],
+    alerts: ["Alertas", "General / Alertas"],
+    errors: ["Erros", "General / Erros"],
+    config: ["Configuracoes", "General / Config"],
+  };
+  state.activeView = view;
+  els.sideButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.view === view));
+  els.views.forEach((panel) => panel.classList.toggle("hidden", panel.id !== `view-${view}`));
+  const [title, crumb] = labels[view] || labels.observability;
+  els.pageTitle.textContent = title;
+  els.pageCrumb.textContent = crumb;
 }
 
-function renderTrendChart() {
-  const sorted = [...state.history].sort((a, b) => new Date(a.checked_at) - new Date(b.checked_at)).slice(-30);
-  const labels = sorted.map((item) => new Date(item.checked_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
-  const values = sorted.map((item) => item.latency_ms ?? 0);
-  drawLineChart(els.trendChart, labels, values);
+function getSelectedTarget() {
+  return state.targets.find((t) => Number(t.id) === Number(state.selectedTargetId)) || null;
 }
 
-function renderTargets(targets) {
+function renderSiteSelect() {
+  const previous = state.selectedTargetId;
+  els.siteSelect.innerHTML = state.targets.length
+    ? state.targets
+        .map((t) => `<option value="${t.id}">${t.name}</option>`)
+        .join("")
+    : '<option value="">Sem sites cadastrados</option>';
+
+  if (!state.targets.length) {
+    state.selectedTargetId = null;
+    state.selectedTargetName = "";
+    return;
+  }
+
+  const hasPrev = previous != null && state.targets.some((t) => Number(t.id) === Number(previous));
+  state.selectedTargetId = hasPrev ? Number(previous) : Number(state.targets[0].id);
+  const selected = getSelectedTarget();
+  state.selectedTargetName = selected?.name || "";
+  els.siteSelect.value = String(state.selectedTargetId);
+}
+
+function renderTargetsTable(targets) {
   if (!targets.length) {
     els.targetsBody.innerHTML = `<tr><td colspan="8">Nenhum alvo cadastrado.</td></tr>`;
     return;
@@ -258,7 +245,7 @@ function renderTargets(targets) {
           <td>
             <div class="actions">
               <button data-action="check" data-id="${target.id}">Check</button>
-              <button data-action="history" data-id="${target.id}" data-name="${target.name}">Historico</button>
+              <button data-action="open" data-id="${target.id}">Abrir</button>
               <button data-action="delete" data-id="${target.id}">Excluir</button>
             </div>
           </td>
@@ -268,96 +255,25 @@ function renderTargets(targets) {
     .join("");
 }
 
-async function refreshDashboard() {
-  const data = await api("/api/dashboard");
-  els.kpiTotal.textContent = data.total_targets;
-  els.kpiUp.textContent = data.up_now;
-  els.kpiDown.textContent = data.down_now;
-  els.kpiUptime.textContent = data.avg_uptime_24h == null ? "--" : `${data.avg_uptime_24h.toFixed(2)}%`;
-  state.targets = data.targets || [];
-  renderTargets(state.targets);
-  renderTargetCharts();
-
-  if (state.selectedTargetId != null) {
-    const found = state.targets.find((item) => Number(item.id) === Number(state.selectedTargetId));
-    if (!found) {
-      state.selectedTargetId = null;
-      state.selectedTargetName = "";
-      state.history = [];
-      els.historyTitle.textContent = 'Clique em "Historico" em um alvo.';
-      els.historyBody.innerHTML = '<tr><td colspan="5">Sem historico para esse alvo.</td></tr>';
-      els.trendTitle.textContent = "Tendencia de latencia (selecione um alvo)";
-      renderTrendChart();
-    }
+function renderSelectedKpis() {
+  const selected = getSelectedTarget();
+  if (!selected) {
+    els.kpiTotal.textContent = "--";
+    els.kpiUp.textContent = "--";
+    els.kpiDown.textContent = "--";
+    els.kpiUptime.textContent = "--";
+    return;
   }
+
+  els.kpiTotal.textContent = selected.last_is_up === true ? "UP" : selected.last_is_up === false ? "DOWN" : "--";
+  els.kpiUp.textContent = selected.last_status_code ?? "--";
+  els.kpiDown.textContent = selected.last_latency_ms != null ? `${selected.last_latency_ms} ms` : "--";
+  els.kpiUptime.textContent = fmtUptime(selected.uptime_24h);
 }
 
-async function refreshAll() {
-  await refreshDashboard();
-  if (state.selectedTargetId != null) {
-    await loadHistory(state.selectedTargetId, state.selectedTargetName || "alvo");
-  }
-}
-
-async function createTarget(event) {
-  event.preventDefault();
-  els.message.textContent = "";
-
-  try {
-    await api("/api/targets", {
-      method: "POST",
-      body: JSON.stringify({
-        name: els.name.value,
-        url: els.url.value,
-        interval_seconds: Number(els.interval.value),
-        timeout_seconds: Number(els.timeout.value),
-      }),
-    });
-
-    els.form.reset();
-    els.interval.value = "60";
-    els.timeout.value = "8";
-    els.message.textContent = "Alvo cadastrado com sucesso.";
-    await refreshDashboard();
-  } catch (err) {
-    els.message.textContent = err.message;
-  }
-}
-
-async function deleteTarget(targetId) {
-  await api(`/api/targets/${targetId}`, { method: "DELETE" });
-  if (Number(state.selectedTargetId) === Number(targetId)) {
-    state.selectedTargetId = null;
-    state.selectedTargetName = "";
-    state.history = [];
-    els.historyTitle.textContent = 'Clique em "Historico" em um alvo.';
-    els.historyBody.innerHTML = '<tr><td colspan="5">Sem historico para esse alvo.</td></tr>';
-    els.trendTitle.textContent = "Tendencia de latencia (selecione um alvo)";
-    renderTrendChart();
-  }
-  await refreshDashboard();
-}
-
-async function checkTarget(targetId) {
-  await api(`/api/targets/${targetId}/check`, { method: "POST" });
-  await refreshDashboard();
-  if (Number(state.selectedTargetId) === Number(targetId)) {
-    await loadHistory(targetId, state.selectedTargetName || "alvo");
-  }
-}
-
-async function loadHistory(targetId, targetName) {
-  const history = await api(`/api/targets/${targetId}/history?limit=60`);
-  state.selectedTargetId = Number(targetId);
-  state.selectedTargetName = targetName;
-  state.history = history || [];
-
-  els.historyTitle.textContent = `Historico de ${targetName}`;
-  els.trendTitle.textContent = `Tendencia de latencia - ${targetName}`;
-
+function renderHistoryTable(history) {
   if (!history.length) {
-    els.historyBody.innerHTML = `<tr><td colspan="5">Sem historico para esse alvo.</td></tr>`;
-    renderTrendChart();
+    els.historyBody.innerHTML = `<tr><td colspan="5">Sem historico para esse site.</td></tr>`;
     return;
   }
 
@@ -375,25 +291,124 @@ async function loadHistory(targetId, targetName) {
       `;
     })
     .join("");
-
-  renderTrendChart();
 }
 
-async function handleTableClick(event) {
+function renderSelectedCharts() {
+  if (!state.history.length) {
+    drawEmptyChart(els.uptimeChart, "Sem dados");
+    drawEmptyChart(els.latencyChart, "Sem dados");
+    drawEmptyChart(els.trendChart, "Sem dados");
+    return;
+  }
+
+  const sorted = [...state.history].sort((a, b) => new Date(a.checked_at) - new Date(b.checked_at)).slice(-30);
+  const labels = sorted.map((item) =>
+    new Date(item.checked_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+  );
+
+  drawBarChart(
+    els.uptimeChart,
+    labels,
+    sorted.map((item) => (item.is_up ? 100 : 0)),
+    { suffix: "%", maxValue: 100, color: "#73d07d" }
+  );
+
+  drawLineChart(
+    els.latencyChart,
+    labels,
+    sorted.map((item) => item.status_code ?? 0)
+  );
+
+  drawLineChart(
+    els.trendChart,
+    labels,
+    sorted.map((item) => item.latency_ms ?? 0)
+  );
+}
+
+async function loadSelectedHistory() {
+  if (!state.selectedTargetId) {
+    state.history = [];
+    els.historyTitle.textContent = "Selecione um site para carregar o historico.";
+    els.trendTitle.textContent = "Tendencia de latencia";
+    renderHistoryTable([]);
+    renderSelectedCharts();
+    return;
+  }
+
+  const history = await api(`/api/targets/${state.selectedTargetId}/history?limit=80`);
+  state.history = history || [];
+  els.historyTitle.textContent = `Historico de ${state.selectedTargetName}`;
+  els.trendTitle.textContent = `Tendencia de latencia - ${state.selectedTargetName}`;
+  renderHistoryTable(state.history);
+  renderSelectedCharts();
+}
+
+async function refreshDashboard() {
+  const data = await api("/api/dashboard");
+  state.targets = data.targets || [];
+  renderTargetsTable(state.targets);
+  renderSiteSelect();
+  renderSelectedKpis();
+  await loadSelectedHistory();
+}
+
+async function createTarget(event) {
+  event.preventDefault();
+  els.message.textContent = "";
+  try {
+    await api("/api/targets", {
+      method: "POST",
+      body: JSON.stringify({
+        name: els.name.value,
+        url: els.url.value,
+        interval_seconds: Number(els.interval.value),
+        timeout_seconds: Number(els.timeout.value),
+      }),
+    });
+    els.form.reset();
+    els.interval.value = "60";
+    els.timeout.value = "8";
+    els.message.textContent = "Alvo cadastrado com sucesso.";
+    await refreshDashboard();
+  } catch (err) {
+    els.message.textContent = err.message;
+  }
+}
+
+async function deleteTarget(targetId) {
+  await api(`/api/targets/${targetId}`, { method: "DELETE" });
+  if (Number(state.selectedTargetId) === Number(targetId)) {
+    state.selectedTargetId = null;
+    state.selectedTargetName = "";
+    state.history = [];
+  }
+  await refreshDashboard();
+}
+
+async function checkTarget(targetId) {
+  await api(`/api/targets/${targetId}/check`, { method: "POST" });
+  await refreshDashboard();
+}
+
+async function handleTargetsClick(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
-
   const action = button.dataset.action;
-  const targetId = button.dataset.id;
-  const targetName = button.dataset.name;
-
+  const targetId = Number(button.dataset.id);
   try {
     if (action === "delete") {
       await deleteTarget(targetId);
     } else if (action === "check") {
       await checkTarget(targetId);
-    } else if (action === "history") {
-      await loadHistory(targetId, targetName || "alvo");
+    } else if (action === "open") {
+      state.selectedTargetId = targetId;
+      const selected = getSelectedTarget();
+      state.selectedTargetName = selected?.name || "";
+      els.siteSelect.value = String(targetId);
+      setActiveView("observability");
+      await loadSelectedHistory();
+      renderSelectedKpis();
     }
   } catch (err) {
     window.alert(err.message);
@@ -401,8 +416,7 @@ async function handleTableClick(event) {
 }
 
 function redrawCharts() {
-  renderTargetCharts();
-  renderTrendChart();
+  renderSelectedCharts();
 }
 
 function updateRefreshStatus() {
@@ -412,26 +426,39 @@ function updateRefreshStatus() {
 function startAutoRefresh() {
   state.refreshCountdown = AUTO_REFRESH_SECONDS;
   updateRefreshStatus();
-
   window.setInterval(() => {
     state.refreshCountdown -= 1;
     if (state.refreshCountdown <= 0) {
       state.refreshCountdown = AUTO_REFRESH_SECONDS;
-      refreshAll().catch(() => {});
+      refreshDashboard().catch(() => {});
     }
     updateRefreshStatus();
   }, 1000);
 }
 
 els.form.addEventListener("submit", createTarget);
-els.targetsBody.addEventListener("click", handleTableClick);
-els.refreshNow.addEventListener("click", () => {
-  state.refreshCountdown = AUTO_REFRESH_SECONDS;
-  updateRefreshStatus();
-  refreshAll().catch((err) => {
+els.targetsBody.addEventListener("click", handleTargetsClick);
+els.siteSelect.addEventListener("change", async () => {
+  const value = Number(els.siteSelect.value);
+  state.selectedTargetId = Number.isFinite(value) ? value : null;
+  const selected = getSelectedTarget();
+  state.selectedTargetName = selected?.name || "";
+  renderSelectedKpis();
+  await loadSelectedHistory().catch((err) => {
     els.message.textContent = err.message;
   });
 });
+els.sideButtons.forEach((btn) => {
+  btn.addEventListener("click", () => setActiveView(btn.dataset.view || "observability"));
+});
+els.refreshNow.addEventListener("click", () => {
+  state.refreshCountdown = AUTO_REFRESH_SECONDS;
+  updateRefreshStatus();
+  refreshDashboard().catch((err) => {
+    els.message.textContent = err.message;
+  });
+});
+
 window.addEventListener("resize", () => {
   window.clearTimeout(window.__gtResizeTimer);
   window.__gtResizeTimer = window.setTimeout(redrawCharts, 120);
@@ -439,7 +466,6 @@ window.addEventListener("resize", () => {
 
 refreshDashboard()
   .then(() => {
-    renderTrendChart();
     startAutoRefresh();
   })
   .catch((err) => {
