@@ -64,6 +64,7 @@ const state = {
   dbTargets: [],
   dbSelectedTargetId: null,
   dbSelectedTargetName: "",
+  selectedEntityType: "site",
 };
 
 const fmtDate = (iso) => {
@@ -236,23 +237,33 @@ function getSelectedTarget() {
   return state.targets.find((t) => Number(t.id) === Number(state.selectedTargetId)) || null;
 }
 
-function renderSiteSelect() {
-  const previous = state.selectedTargetId;
-  els.siteSelect.innerHTML = state.targets.length
-    ? state.targets.map((t) => `<option value="${t.id}">${t.name}</option>`).join("")
-    : '<option value="">Sem sites cadastrados</option>';
+function getSelectedDbTarget() {
+  return state.dbTargets.find((t) => Number(t.id) === Number(state.selectedTargetId)) || null;
+}
 
-  if (!state.targets.length) {
+function renderSiteSelect() {
+  const options = [
+    ...state.targets.map((t) => ({ key: `site:${t.id}`, label: `[Site] ${t.name}`, type: "site", id: Number(t.id) })),
+    ...state.dbTargets.map((t) => ({ key: `db:${t.id}`, label: `[Banco] ${t.name}`, type: "db", id: Number(t.id) })),
+  ];
+
+  els.siteSelect.innerHTML = options.length
+    ? options.map((o) => `<option value="${o.key}">${o.label}</option>`).join("")
+    : '<option value="">Sem alvos cadastrados</option>';
+
+  if (!options.length) {
     state.selectedTargetId = null;
     state.selectedTargetName = "";
+    state.selectedEntityType = "site";
     return;
   }
 
-  const hasPrev = previous != null && state.targets.some((t) => Number(t.id) === Number(previous));
-  state.selectedTargetId = hasPrev ? Number(previous) : Number(state.targets[0].id);
-  const selected = getSelectedTarget();
-  state.selectedTargetName = selected?.name || "";
-  els.siteSelect.value = String(state.selectedTargetId);
+  const previousKey = state.selectedTargetId != null ? `${state.selectedEntityType}:${state.selectedTargetId}` : null;
+  const selectedOption = options.find((o) => o.key === previousKey) || options[0];
+  state.selectedEntityType = selectedOption.type;
+  state.selectedTargetId = selectedOption.id;
+  state.selectedTargetName = selectedOption.label.replace(/^\[(Site|Banco)\]\s*/, "");
+  els.siteSelect.value = selectedOption.key;
 }
 
 function renderTargetsTable(targets) {
@@ -287,7 +298,7 @@ function renderTargetsTable(targets) {
 }
 
 function renderSelectedKpis() {
-  const selected = getSelectedTarget();
+  const selected = state.selectedEntityType === "db" ? getSelectedDbTarget() : getSelectedTarget();
   if (!selected) {
     els.kpiTotal.textContent = "--";
     els.kpiUp.textContent = "--";
@@ -303,13 +314,35 @@ function renderSelectedKpis() {
   }
 
   els.kpiTotal.textContent = selected.last_is_up === true ? "UP" : selected.last_is_up === false ? "DOWN" : "--";
-  els.kpiUp.textContent = selected.last_status_code ?? "--";
+  els.kpiUp.textContent = state.selectedEntityType === "db" ? selected.engine?.toUpperCase() || "DB" : selected.last_status_code ?? "--";
   els.kpiDown.textContent = selected.last_latency_ms != null ? `${selected.last_latency_ms} ms` : "--";
-  els.kpiUptime.textContent = fmtUptime(selected.uptime_24h);
+  if (state.selectedEntityType === "db") {
+    const history = state.history || [];
+    const uptime = history.length
+      ? (history.filter((h) => h.is_up).length / history.length) * 100
+      : null;
+    const now = new Date();
+    const dayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+    const weekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    const monthAgo = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const failures = history.filter((h) => h.is_up === false);
+    const lastFailure = failures.length ? failures[0] : null;
+    const countInWindow = (sinceMs) =>
+      failures.filter((f) => new Date(f.checked_at).getTime() >= sinceMs).length;
 
+    els.kpiUptime.textContent = uptime == null ? "--" : `${uptime.toFixed(2)}%`;
+    els.kpiLastFailure.textContent = lastFailure ? fmtDate(lastFailure.checked_at) : "--";
+    els.kpiMttr.textContent = "--";
+    els.kpiMtbf.textContent = "--";
+    els.kpiIncDay.textContent = String(countInWindow(dayAgo));
+    els.kpiIncWeek.textContent = String(countInWindow(weekAgo));
+    els.kpiIncMonth.textContent = String(countInWindow(monthAgo));
+    return;
+  }
+
+  els.kpiUptime.textContent = fmtUptime(selected.uptime_24h);
   const rel = state.reliability;
-  const lastFailure = rel?.last_incident?.started_at ? fmtDate(rel.last_incident.started_at) : "--";
-  els.kpiLastFailure.textContent = lastFailure;
+  els.kpiLastFailure.textContent = rel?.last_incident?.started_at ? fmtDate(rel.last_incident.started_at) : "--";
   els.kpiMttr.textContent = fmtDuration(rel?.mttr_seconds);
   els.kpiMtbf.textContent = fmtDuration(rel?.mtbf_seconds);
   els.kpiIncDay.textContent = String(rel?.incidents_day ?? "--");
@@ -318,10 +351,30 @@ function renderSelectedKpis() {
 }
 
 function renderHistoryTable(history) {
+  const emptyLabel = state.selectedEntityType === "db" ? "Sem historico para esse banco." : "Sem historico para esse site.";
   if (!history.length) {
-    els.historyBody.innerHTML = `<tr><td colspan="5">Sem historico para esse site.</td></tr>`;
+    els.historyBody.innerHTML = `<tr><td colspan="5">${emptyLabel}</td></tr>`;
     return;
   }
+
+  if (state.selectedEntityType === "db") {
+    els.historyBody.innerHTML = history
+      .map((item) => {
+        const status = statusLabel(item.is_up);
+        return `
+          <tr>
+            <td>${fmtDate(item.checked_at)}</td>
+            <td><span class="status ${status.css}">${status.text}</span></td>
+            <td>--</td>
+            <td>${fmtLatency(item.latency_ms)}</td>
+            <td>${item.error_message || "--"}</td>
+          </tr>
+        `;
+      })
+      .join("");
+    return;
+  }
+
   els.historyBody.innerHTML = history
     .map((item) => {
       const status = statusLabel(item.is_up);
@@ -339,6 +392,10 @@ function renderHistoryTable(history) {
 }
 
 function renderIncidentsTable(incidents) {
+  if (state.selectedEntityType === "db") {
+    els.incidentsBody.innerHTML = `<tr><td colspan="5">Incidentes detalhados disponiveis apenas para sites HTTP.</td></tr>`;
+    return;
+  }
   if (!incidents.length) {
     els.incidentsBody.innerHTML = `<tr><td colspan="5">Sem incidentes registrados.</td></tr>`;
     return;
@@ -372,18 +429,28 @@ function renderSelectedCharts() {
     new Date(item.checked_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
   );
 
-  drawBarChart(
-    els.uptimeChart,
-    labels,
-    sorted.map((item) => (item.is_up ? 100 : 0)),
-    { suffix: "%", maxValue: 100, color: "#73d07d" }
-  );
-  drawLineChart(
-    els.latencyChart,
-    labels,
-    sorted.map((item) => item.status_code ?? 0),
-    "#78a9ff"
-  );
+  drawBarChart(els.uptimeChart, labels, sorted.map((item) => (item.is_up ? 100 : 0)), {
+    suffix: "%",
+    maxValue: 100,
+    color: "#73d07d",
+  });
+
+  if (state.selectedEntityType === "db") {
+    drawLineChart(
+      els.latencyChart,
+      labels,
+      sorted.map((item) => (item.is_up ? 1 : 0)),
+      "#78a9ff"
+    );
+  } else {
+    drawLineChart(
+      els.latencyChart,
+      labels,
+      sorted.map((item) => item.status_code ?? 0),
+      "#78a9ff"
+    );
+  }
+
   drawLineChart(
     els.trendChart,
     labels,
@@ -401,6 +468,20 @@ async function loadSelectedDetails() {
     els.trendTitle.textContent = "Tendencia de latencia";
     renderHistoryTable([]);
     renderIncidentsTable([]);
+    renderSelectedCharts();
+    renderSelectedKpis();
+    return;
+  }
+
+  if (state.selectedEntityType === "db") {
+    const history = await api(`/api/db-targets/${state.selectedTargetId}/history?limit=80`);
+    state.history = history || [];
+    state.reliability = null;
+    state.incidents = [];
+    els.historyTitle.textContent = `Historico de ${state.selectedTargetName}`;
+    els.trendTitle.textContent = `Tendencia de latencia - ${state.selectedTargetName}`;
+    renderHistoryTable(state.history);
+    renderIncidentsTable(state.incidents);
     renderSelectedCharts();
     renderSelectedKpis();
     return;
@@ -425,9 +506,11 @@ async function loadSelectedDetails() {
 }
 
 async function refreshDashboard() {
-  const data = await api("/api/dashboard");
-  state.targets = data.targets || [];
+  const [siteDashboard, dbTargets] = await Promise.all([api("/api/dashboard"), api("/api/db-targets")]);
+  state.targets = siteDashboard.targets || [];
+  state.dbTargets = dbTargets || [];
   renderTargetsTable(state.targets);
+  renderDbTargetsTable(state.dbTargets);
   renderSiteSelect();
   await loadSelectedDetails();
 }
@@ -465,6 +548,13 @@ async function loadDbHistory(dbTargetId, dbTargetName) {
   const history = await api(`/api/db-targets/${dbTargetId}/history?limit=80`);
   state.dbSelectedTargetId = Number(dbTargetId);
   state.dbSelectedTargetName = dbTargetName;
+  state.selectedEntityType = "db";
+  state.selectedTargetId = Number(dbTargetId);
+  state.selectedTargetName = dbTargetName;
+  const key = `db:${dbTargetId}`;
+  if ([...els.siteSelect.options].some((opt) => opt.value === key)) {
+    els.siteSelect.value = key;
+  }
   els.dbHistoryTitle.textContent = `Histórico de ${dbTargetName}`;
 
   if (!history.length) {
@@ -491,6 +581,7 @@ async function refreshDbTargets() {
   const data = await api("/api/db-targets");
   state.dbTargets = data || [];
   renderDbTargetsTable(state.dbTargets);
+  renderSiteSelect();
 
   if (state.dbSelectedTargetId != null) {
     const selected = state.dbTargets.find((t) => Number(t.id) === Number(state.dbSelectedTargetId));
@@ -502,6 +593,10 @@ async function refreshDbTargets() {
       return;
     }
     await loadDbHistory(selected.id, selected.name);
+  }
+
+  if (state.activeView === "observability") {
+    await loadSelectedDetails();
   }
 }
 
@@ -597,10 +692,11 @@ async function handleTargetsClick(event) {
     } else if (action === "check") {
       await checkTarget(targetId);
     } else if (action === "open") {
+      state.selectedEntityType = "site";
       state.selectedTargetId = targetId;
       const selected = getSelectedTarget();
       state.selectedTargetName = selected?.name || "";
-      els.siteSelect.value = String(targetId);
+      els.siteSelect.value = `site:${targetId}`;
       setActiveView("observability");
       await loadSelectedDetails();
     }
@@ -663,9 +759,17 @@ els.dbForm.addEventListener("submit", createDbTarget);
 els.dbTargetsBody.addEventListener("click", handleDbTargetsClick);
 els.siteSelect.addEventListener("change", async () => {
   const raw = (els.siteSelect.value || "").trim();
-  state.selectedTargetId = raw ? Number(raw) : null;
-  const selected = getSelectedTarget();
-  state.selectedTargetName = selected?.name || "";
+  if (!raw || !raw.includes(":")) {
+    state.selectedEntityType = "site";
+    state.selectedTargetId = null;
+    state.selectedTargetName = "";
+  } else {
+    const [entityType, idStr] = raw.split(":");
+    state.selectedEntityType = entityType === "db" ? "db" : "site";
+    state.selectedTargetId = Number(idStr);
+    const selected = state.selectedEntityType === "db" ? getSelectedDbTarget() : getSelectedTarget();
+    state.selectedTargetName = selected?.name || "";
+  }
   await loadSelectedDetails().catch((err) => {
     els.message.textContent = err.message;
   });
