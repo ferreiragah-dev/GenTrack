@@ -124,6 +124,33 @@ def init_db() -> None:
                 CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_incidents_target_time ON incidents(target_id, started_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents(target_id, is_resolved);
+
+                CREATE TABLE IF NOT EXISTS db_targets (
+                    id BIGSERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    engine TEXT NOT NULL DEFAULT 'postgres',
+                    host TEXT NOT NULL,
+                    port INTEGER NOT NULL DEFAULT 5432,
+                    database_name TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    sslmode TEXT NOT NULL DEFAULT 'disable',
+                    interval_seconds INTEGER NOT NULL DEFAULT 60,
+                    timeout_seconds INTEGER NOT NULL DEFAULT 5,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS db_checks (
+                    id BIGSERIAL PRIMARY KEY,
+                    db_target_id BIGINT NOT NULL REFERENCES db_targets(id) ON DELETE CASCADE,
+                    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    latency_ms INTEGER,
+                    is_up BOOLEAN NOT NULL,
+                    error_message TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_db_checks_target_time ON db_checks(db_target_id, checked_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_db_checks_time ON db_checks(checked_at DESC);
                 """
             )
         conn.commit()
@@ -191,6 +218,51 @@ def normalize_target_payload(payload: dict):
         "expected_substring": expected_substring,
         "expected_json_keys": expected_json_keys,
         "max_latency_ms": max_latency_ms,
+    }
+
+
+def normalize_db_target_payload(payload: dict):
+    name = (payload.get("name") or "").strip()
+    engine = (payload.get("engine") or "postgres").strip().lower()
+    host = (payload.get("host") or "").strip()
+    database_name = (payload.get("database_name") or "").strip()
+    username = (payload.get("username") or "").strip()
+    password = (payload.get("password") or "").strip()
+    sslmode = (payload.get("sslmode") or "disable").strip().lower()
+    port = int(payload.get("port", 5432))
+    interval_seconds = int(payload.get("interval_seconds", DEFAULT_INTERVAL_SECONDS))
+    timeout_seconds = int(payload.get("timeout_seconds", 5))
+
+    if not name:
+        raise ValueError("Nome do monitor de banco e obrigatorio.")
+    if engine != "postgres":
+        raise ValueError("Engine suportada atualmente: postgres.")
+    if not host:
+        raise ValueError("Host e obrigatorio.")
+    if not database_name:
+        raise ValueError("Nome do banco e obrigatorio.")
+    if not username:
+        raise ValueError("Usuario e obrigatorio.")
+    if not password:
+        raise ValueError("Senha e obrigatoria.")
+    if port < 1 or port > 65535:
+        raise ValueError("Porta invalida.")
+    if interval_seconds < 1:
+        raise ValueError("interval_seconds deve ser >= 1.")
+    if timeout_seconds < 1 or timeout_seconds > 60:
+        raise ValueError("timeout_seconds deve estar entre 1 e 60.")
+
+    return {
+        "name": name,
+        "engine": engine,
+        "host": host,
+        "port": port,
+        "database_name": database_name,
+        "username": username,
+        "password": password,
+        "sslmode": sslmode,
+        "interval_seconds": interval_seconds,
+        "timeout_seconds": timeout_seconds,
     }
 
 
@@ -425,6 +497,52 @@ def run_single_check(conn, target: dict) -> dict:
     }
 
 
+def run_single_db_check(conn, target: dict) -> dict:
+    started = time.perf_counter()
+    checked_at = utc_now()
+    is_up = False
+    error_message = None
+    latency_ms = None
+
+    try:
+        dsn = (
+            f"postgres://{quote_plus(target['username'])}:{quote_plus(target['password'])}"
+            f"@{target['host']}:{target['port']}/{quote_plus(target['database_name'])}"
+            f"?sslmode={target['sslmode']}"
+        )
+        with psycopg.connect(dsn, connect_timeout=target["timeout_seconds"]) as db_conn:
+            with db_conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        is_up = True
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        is_up = False
+        error_message = str(exc)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO db_checks (db_target_id, checked_at, latency_ms, is_up, error_message)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (target["id"], checked_at, latency_ms, is_up, error_message),
+        )
+        check_id = cur.fetchone()["id"]
+    conn.commit()
+
+    return {
+        "id": check_id,
+        "db_target_id": target["id"],
+        "checked_at": checked_at.isoformat(),
+        "latency_ms": latency_ms,
+        "is_up": bool(is_up),
+        "error_message": error_message,
+    }
+
+
 def get_due_targets(conn) -> list[dict]:
     now = utc_now()
     with conn.cursor() as cur:
@@ -455,6 +573,36 @@ def get_due_targets(conn) -> list[dict]:
     return due
 
 
+def get_due_db_targets(conn) -> list[dict]:
+    now = utc_now()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT d.*,
+                   (
+                       SELECT c.checked_at
+                       FROM db_checks c
+                       WHERE c.db_target_id = d.id
+                       ORDER BY c.checked_at DESC
+                       LIMIT 1
+                   ) AS last_checked_at
+            FROM db_targets d
+            ORDER BY d.id ASC
+            """
+        )
+        rows = cur.fetchall()
+
+    due = []
+    for row in rows:
+        last_checked_at = row["last_checked_at"]
+        if not last_checked_at:
+            due.append(row)
+            continue
+        if now - last_checked_at >= timedelta(seconds=row["interval_seconds"]):
+            due.append(row)
+    return due
+
+
 def monitor_loop() -> None:
     while True:
         conn = None
@@ -462,6 +610,8 @@ def monitor_loop() -> None:
             conn = get_db_connection()
             for target in get_due_targets(conn):
                 run_single_check(conn, target)
+            for db_target in get_due_db_targets(conn):
+                run_single_db_check(conn, db_target)
         except Exception as exc:
             if conn:
                 conn.rollback()
@@ -884,6 +1034,231 @@ def dashboard():
                 "avg_uptime_24h": avg_uptime,
                 "incident_summary": build_reliability_summary(conn),
                 "targets": targets,
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets", methods=["GET"])
+def list_db_targets():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT d.*,
+                       (
+                           SELECT c.checked_at FROM db_checks c
+                           WHERE c.db_target_id = d.id
+                           ORDER BY c.checked_at DESC
+                           LIMIT 1
+                       ) AS last_checked_at,
+                       (
+                           SELECT c.latency_ms FROM db_checks c
+                           WHERE c.db_target_id = d.id
+                           ORDER BY c.checked_at DESC
+                           LIMIT 1
+                       ) AS last_latency_ms,
+                       (
+                           SELECT c.is_up FROM db_checks c
+                           WHERE c.db_target_id = d.id
+                           ORDER BY c.checked_at DESC
+                           LIMIT 1
+                       ) AS last_is_up,
+                       (
+                           SELECT c.error_message FROM db_checks c
+                           WHERE c.db_target_id = d.id
+                           ORDER BY c.checked_at DESC
+                           LIMIT 1
+                       ) AS last_error_message
+                FROM db_targets d
+                ORDER BY d.id ASC
+                """
+            )
+            rows = cur.fetchall()
+
+        return jsonify(
+            [
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "engine": row["engine"],
+                    "host": row["host"],
+                    "port": row["port"],
+                    "database_name": row["database_name"],
+                    "username": row["username"],
+                    "sslmode": row["sslmode"],
+                    "interval_seconds": row["interval_seconds"],
+                    "timeout_seconds": row["timeout_seconds"],
+                    "created_at": to_iso(row["created_at"]),
+                    "last_checked_at": to_iso(row["last_checked_at"]),
+                    "last_latency_ms": row["last_latency_ms"],
+                    "last_is_up": bool(row["last_is_up"]) if row["last_is_up"] is not None else None,
+                    "last_error_message": row["last_error_message"],
+                }
+                for row in rows
+            ]
+        )
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets", methods=["POST"])
+def create_db_target():
+    payload = flask_request.get_json(silent=True) or {}
+    try:
+        data = normalize_db_target_payload(payload)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO db_targets (
+                    name, engine, host, port, database_name, username, password, sslmode,
+                    interval_seconds, timeout_seconds, created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    data["name"],
+                    data["engine"],
+                    data["host"],
+                    data["port"],
+                    data["database_name"],
+                    data["username"],
+                    data["password"],
+                    data["sslmode"],
+                    data["interval_seconds"],
+                    data["timeout_seconds"],
+                    utc_now(),
+                ),
+            )
+            db_target_id = cur.fetchone()["id"]
+        conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM db_targets WHERE id = %s", (db_target_id,))
+            db_target = cur.fetchone()
+        run_single_db_check(conn, db_target)
+
+        return jsonify({"id": db_target_id}), 201
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets/<int:db_target_id>", methods=["DELETE"])
+def delete_db_target(db_target_id: int):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM db_targets WHERE id = %s", (db_target_id,))
+            affected = cur.rowcount
+        conn.commit()
+        if affected == 0:
+            return jsonify({"error": "Monitor de banco nao encontrado."}), 404
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets/<int:db_target_id>/check", methods=["POST"])
+def manual_db_check(db_target_id: int):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM db_targets WHERE id = %s", (db_target_id,))
+            db_target = cur.fetchone()
+        if not db_target:
+            return jsonify({"error": "Monitor de banco nao encontrado."}), 404
+        result = run_single_db_check(conn, db_target)
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets/<int:db_target_id>/history", methods=["GET"])
+def db_target_history(db_target_id: int):
+    limit_raw = flask_request.args.get("limit", "100")
+    try:
+        limit = max(1, min(MAX_HISTORY_LIMIT, int(limit_raw)))
+    except ValueError:
+        return jsonify({"error": "Parametro 'limit' invalido."}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM db_targets WHERE id = %s", (db_target_id,))
+            if not cur.fetchone():
+                return jsonify({"error": "Monitor de banco nao encontrado."}), 404
+
+            cur.execute(
+                """
+                SELECT id, db_target_id, checked_at, latency_ms, is_up, error_message
+                FROM db_checks
+                WHERE db_target_id = %s
+                ORDER BY checked_at DESC
+                LIMIT %s
+                """,
+                (db_target_id, limit),
+            )
+            rows = cur.fetchall()
+
+        return jsonify(
+            [
+                {
+                    "id": row["id"],
+                    "db_target_id": row["db_target_id"],
+                    "checked_at": to_iso(row["checked_at"]),
+                    "latency_ms": row["latency_ms"],
+                    "is_up": bool(row["is_up"]),
+                    "error_message": row["error_message"],
+                }
+                for row in rows
+            ]
+        )
+    finally:
+        conn.close()
+
+
+@app.route("/api/db-targets/dashboard", methods=["GET"])
+def db_targets_dashboard():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (
+                        WHERE (
+                            SELECT c.is_up FROM db_checks c
+                            WHERE c.db_target_id = d.id
+                            ORDER BY c.checked_at DESC
+                            LIMIT 1
+                        ) IS TRUE
+                    ) AS up_now,
+                    COUNT(*) FILTER (
+                        WHERE (
+                            SELECT c.is_up FROM db_checks c
+                            WHERE c.db_target_id = d.id
+                            ORDER BY c.checked_at DESC
+                            LIMIT 1
+                        ) IS FALSE
+                    ) AS down_now
+                FROM db_targets d
+                """
+            )
+            agg = cur.fetchone() or {}
+        return jsonify(
+            {
+                "total": int(agg.get("total") or 0),
+                "up_now": int(agg.get("up_now") or 0),
+                "down_now": int(agg.get("down_now") or 0),
             }
         )
     finally:

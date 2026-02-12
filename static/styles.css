@@ -272,7 +272,22 @@ input {
   padding: 8px 10px;
 }
 
+select {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #0e1521;
+  color: #e6edf7;
+  font: inherit;
+  padding: 8px 10px;
+}
+
 input:focus {
+  outline: none;
+  border-color: rgba(255, 159, 10, 0.6);
+}
+
+select:focus {
   outline: none;
   border-color: rgba(255, 159, 10, 0.6);
 }

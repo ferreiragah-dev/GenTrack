@@ -33,6 +33,21 @@ const els = {
   views: document.querySelectorAll(".view"),
   pageTitle: document.getElementById("page-title"),
   pageCrumb: document.getElementById("page-crumb"),
+  dbForm: document.getElementById("db-target-form"),
+  dbName: document.getElementById("db_name"),
+  dbEngine: document.getElementById("db_engine"),
+  dbHost: document.getElementById("db_host"),
+  dbPort: document.getElementById("db_port"),
+  dbDatabaseName: document.getElementById("db_database_name"),
+  dbUsername: document.getElementById("db_username"),
+  dbPassword: document.getElementById("db_password"),
+  dbSslmode: document.getElementById("db_sslmode"),
+  dbIntervalSeconds: document.getElementById("db_interval_seconds"),
+  dbTimeoutSeconds: document.getElementById("db_timeout_seconds"),
+  dbFormMessage: document.getElementById("db-form-message"),
+  dbTargetsBody: document.getElementById("db-targets-body"),
+  dbHistoryTitle: document.getElementById("db-history-title"),
+  dbHistoryBody: document.getElementById("db-history-body"),
 };
 
 const AUTO_REFRESH_SECONDS = 15;
@@ -46,6 +61,9 @@ const state = {
   selectedTargetName: "",
   refreshCountdown: AUTO_REFRESH_SECONDS,
   activeView: "observability",
+  dbTargets: [],
+  dbSelectedTargetId: null,
+  dbSelectedTargetName: "",
 };
 
 const fmtDate = (iso) => {
@@ -201,6 +219,7 @@ function setActiveView(view) {
   const labels = {
     observability: ["Observabilidade Web", "General / GenTrack Uptime"],
     sites: ["Sites Monitorados", "General / Sites"],
+    database: ["Monitoramento de Banco", "General / Database"],
     alerts: ["Alertas", "General / Alertas"],
     errors: ["Erros", "General / Erros"],
     config: ["Configuracoes", "General / Config"],
@@ -413,6 +432,79 @@ async function refreshDashboard() {
   await loadSelectedDetails();
 }
 
+function renderDbTargetsTable(targets) {
+  if (!targets.length) {
+    els.dbTargetsBody.innerHTML = `<tr><td colspan="6">Nenhum monitor de banco cadastrado.</td></tr>`;
+    return;
+  }
+
+  els.dbTargetsBody.innerHTML = targets
+    .map((target) => {
+      const status = statusLabel(target.last_is_up);
+      return `
+        <tr>
+          <td>${target.name}</td>
+          <td>${target.host}:${target.port}/${target.database_name}</td>
+          <td><span class="status ${status.css}">${status.text}</span></td>
+          <td>${fmtLatency(target.last_latency_ms)}</td>
+          <td>${fmtDate(target.last_checked_at)}</td>
+          <td>
+            <div class="actions">
+              <button data-db-action="check" data-id="${target.id}">Check</button>
+              <button data-db-action="history" data-id="${target.id}" data-name="${target.name}">Histórico</button>
+              <button data-db-action="delete" data-id="${target.id}">Excluir</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+async function loadDbHistory(dbTargetId, dbTargetName) {
+  const history = await api(`/api/db-targets/${dbTargetId}/history?limit=80`);
+  state.dbSelectedTargetId = Number(dbTargetId);
+  state.dbSelectedTargetName = dbTargetName;
+  els.dbHistoryTitle.textContent = `Histórico de ${dbTargetName}`;
+
+  if (!history.length) {
+    els.dbHistoryBody.innerHTML = `<tr><td colspan="4">Sem histórico para esse banco.</td></tr>`;
+    return;
+  }
+
+  els.dbHistoryBody.innerHTML = history
+    .map((item) => {
+      const status = statusLabel(item.is_up);
+      return `
+        <tr>
+          <td>${fmtDate(item.checked_at)}</td>
+          <td><span class="status ${status.css}">${status.text}</span></td>
+          <td>${fmtLatency(item.latency_ms)}</td>
+          <td>${item.error_message || "--"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+async function refreshDbTargets() {
+  const data = await api("/api/db-targets");
+  state.dbTargets = data || [];
+  renderDbTargetsTable(state.dbTargets);
+
+  if (state.dbSelectedTargetId != null) {
+    const selected = state.dbTargets.find((t) => Number(t.id) === Number(state.dbSelectedTargetId));
+    if (!selected) {
+      state.dbSelectedTargetId = null;
+      state.dbSelectedTargetName = "";
+      els.dbHistoryTitle.textContent = 'Clique em "Histórico" em um banco.';
+      els.dbHistoryBody.innerHTML = `<tr><td colspan="4">Sem histórico para esse banco.</td></tr>`;
+      return;
+    }
+    await loadDbHistory(selected.id, selected.name);
+  }
+}
+
 async function createTarget(event) {
   event.preventDefault();
   els.message.textContent = "";
@@ -440,6 +532,41 @@ async function createTarget(event) {
     await refreshDashboard();
   } catch (err) {
     els.message.textContent = err.message;
+  }
+}
+
+async function createDbTarget(event) {
+  event.preventDefault();
+  els.dbFormMessage.textContent = "";
+
+  const payload = {
+    name: (els.dbName.value || "").trim(),
+    engine: (els.dbEngine.value || "postgres").trim(),
+    host: (els.dbHost.value || "").trim(),
+    port: Number(els.dbPort.value),
+    database_name: (els.dbDatabaseName.value || "").trim(),
+    username: (els.dbUsername.value || "").trim(),
+    password: els.dbPassword.value || "",
+    sslmode: (els.dbSslmode.value || "disable").trim(),
+    interval_seconds: Number(els.dbIntervalSeconds.value),
+    timeout_seconds: Number(els.dbTimeoutSeconds.value),
+  };
+
+  try {
+    await api("/api/db-targets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    els.dbForm.reset();
+    els.dbPort.value = "5432";
+    els.dbIntervalSeconds.value = "60";
+    els.dbTimeoutSeconds.value = "5";
+    els.dbEngine.value = "postgres";
+    els.dbSslmode.value = "disable";
+    els.dbFormMessage.textContent = "Monitor de banco cadastrado com sucesso.";
+    await refreshDbTargets();
+  } catch (err) {
+    els.dbFormMessage.textContent = err.message;
   }
 }
 
@@ -482,6 +609,33 @@ async function handleTargetsClick(event) {
   }
 }
 
+async function handleDbTargetsClick(event) {
+  const button = event.target.closest("button[data-db-action]");
+  if (!button) return;
+
+  const action = button.dataset.dbAction;
+  const dbTargetId = Number(button.dataset.id);
+  const dbTargetName = button.dataset.name || "banco";
+
+  try {
+    if (action === "delete") {
+      await api(`/api/db-targets/${dbTargetId}`, { method: "DELETE" });
+      if (Number(state.dbSelectedTargetId) === Number(dbTargetId)) {
+        state.dbSelectedTargetId = null;
+        state.dbSelectedTargetName = "";
+      }
+      await refreshDbTargets();
+    } else if (action === "check") {
+      await api(`/api/db-targets/${dbTargetId}/check`, { method: "POST" });
+      await refreshDbTargets();
+    } else if (action === "history") {
+      await loadDbHistory(dbTargetId, dbTargetName);
+    }
+  } catch (err) {
+    window.alert(err.message);
+  }
+}
+
 function redrawCharts() {
   renderSelectedCharts();
 }
@@ -497,7 +651,7 @@ function startAutoRefresh() {
     state.refreshCountdown -= 1;
     if (state.refreshCountdown <= 0) {
       state.refreshCountdown = AUTO_REFRESH_SECONDS;
-      refreshDashboard().catch(() => {});
+      Promise.all([refreshDashboard(), refreshDbTargets()]).catch(() => {});
     }
     updateRefreshStatus();
   }, 1000);
@@ -505,6 +659,8 @@ function startAutoRefresh() {
 
 els.form.addEventListener("submit", createTarget);
 els.targetsBody.addEventListener("click", handleTargetsClick);
+els.dbForm.addEventListener("submit", createDbTarget);
+els.dbTargetsBody.addEventListener("click", handleDbTargetsClick);
 els.siteSelect.addEventListener("change", async () => {
   const raw = (els.siteSelect.value || "").trim();
   state.selectedTargetId = raw ? Number(raw) : null;
@@ -523,6 +679,9 @@ els.refreshNow.addEventListener("click", () => {
   refreshDashboard().catch((err) => {
     els.message.textContent = err.message;
   });
+  refreshDbTargets().catch((err) => {
+    els.dbFormMessage.textContent = err.message;
+  });
 });
 window.addEventListener("resize", () => {
   window.clearTimeout(window.__gtResizeTimer);
@@ -530,6 +689,9 @@ window.addEventListener("resize", () => {
 });
 
 refreshDashboard()
+  .then(() => {
+    return refreshDbTargets();
+  })
   .then(() => {
     startAutoRefresh();
   })

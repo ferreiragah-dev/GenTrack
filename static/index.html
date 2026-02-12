@@ -13,6 +13,7 @@
         <nav class="side-nav">
           <button class="side-item active" data-view="observability" type="button">Dashboard</button>
           <button class="side-item" data-view="sites" type="button">Sites</button>
+          <button class="side-item" data-view="database" type="button">Banco</button>
           <button class="side-item" data-view="alerts" type="button">Alertas</button>
           <button class="side-item" data-view="errors" type="button">Erros</button>
           <button class="side-item" data-view="config" type="button">Config</button>
@@ -204,6 +205,109 @@
                 </table>
               </div>
             </article>
+          </section>
+        </main>
+
+        <main class="layout view hidden" id="view-database">
+          <section class="split-grid">
+            <article class="panel">
+              <h3>Novo monitoramento de banco</h3>
+              <form id="db-target-form">
+                <label>
+                  Nome
+                  <input type="text" id="db_name" required placeholder="Ex: PostgreSQL Produção" />
+                </label>
+                <div class="row">
+                  <label>
+                    Engine
+                    <select id="db_engine">
+                      <option value="postgres">postgres</option>
+                    </select>
+                  </label>
+                  <label>
+                    SSL Mode
+                    <select id="db_sslmode">
+                      <option value="disable">disable</option>
+                      <option value="require">require</option>
+                      <option value="prefer">prefer</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="row">
+                  <label>
+                    Host
+                    <input type="text" id="db_host" required placeholder="db.exemplo.com" />
+                  </label>
+                  <label>
+                    Porta
+                    <input type="number" id="db_port" value="5432" min="1" max="65535" required />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>
+                    Banco
+                    <input type="text" id="db_database_name" required placeholder="meu_banco" />
+                  </label>
+                  <label>
+                    Usuário
+                    <input type="text" id="db_username" required placeholder="usuario" />
+                  </label>
+                </div>
+                <label>
+                  Senha
+                  <input type="password" id="db_password" required />
+                </label>
+                <div class="row">
+                  <label>
+                    Intervalo (s)
+                    <input type="number" id="db_interval_seconds" min="1" value="60" required />
+                  </label>
+                  <label>
+                    Timeout (s)
+                    <input type="number" id="db_timeout_seconds" min="1" max="60" value="5" required />
+                  </label>
+                </div>
+                <button type="submit">Cadastrar</button>
+              </form>
+              <p id="db-form-message" class="message"></p>
+            </article>
+
+            <article class="panel">
+              <h3>Bancos monitorados</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Host</th>
+                      <th>Status</th>
+                      <th>Latência</th>
+                      <th>Último check</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-targets-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <section class="panel">
+            <h3>Histórico de checks do banco</h3>
+            <p id="db-history-title">Clique em "Histórico" em um banco.</p>
+            <div class="table-wrap history-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Horário</th>
+                    <th>Status</th>
+                    <th>Latência</th>
+                    <th>Erro</th>
+                  </tr>
+                </thead>
+                <tbody id="db-history-body"></tbody>
+              </table>
+            </div>
           </section>
         </main>
 
